@@ -19,6 +19,8 @@
 #include <string.h>
 #include <chrono>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #include "../SimpleJSON/src/JSON.h"
 #include "../SimpleJSON/src/JSONValue.h"
 
