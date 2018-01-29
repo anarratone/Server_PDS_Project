@@ -20,6 +20,7 @@
 #include <chrono>
 #include <thread>
 #include <mutex>
+#include <set>
 #include <condition_variable>
 #include "../SimpleJSON/src/JSON.h"
 #include "../SimpleJSON/src/JSONValue.h"

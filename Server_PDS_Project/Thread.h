@@ -17,7 +17,9 @@ public:
 	Thread(HWND hWnd, std::wstring name, DWORD tid, HICON hIcon) :
 		notification(0), hWnd(hWnd), name(name), tid(tid), hIcon(hIcon) {};
 	std::string serialize(size_t *size);
-	void setFocusFlag();
-	HWND getHandle();
+	void set_focus_flag();
+	HWND get_handle();
+	float active_time;
+	double active_percentage;
 	~Thread();
 };

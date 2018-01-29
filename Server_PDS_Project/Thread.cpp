@@ -7,7 +7,6 @@ std::string Thread::serialize(size_t *size)
 {
 	JSONObject json;
 
-	json[L"id"] = new JSONValue(this->id);
 	json[L"titolo"] = new JSONValue(this->name);
 	json[L"pid"] = new JSONValue((int) this->tid);
 	json[L"isFocused"] = new JSONValue(this->focus);
@@ -31,12 +30,11 @@ std::string Thread::serialize(size_t *size)
 	return s;
 }
 
-void Thread::setFocusFlag()
-{
+void Thread::set_focus_flag() {
 	this->focus = true;
 }
 
-HWND Thread::getHandle() {
+HWND Thread::get_handle() {
 	return this->hWnd;
 }
 

@@ -14,6 +14,8 @@ int WINDOWS_ID = 0;
 
 /*Data structure containing all the running windows*/
 std::map<int, Thread> threads;
+std::set<Thread> new_threads;
+std::vector<SOCKET> clients;
 
 /*Mutex 1: control access to the threads map*/
 std::mutex m1;
@@ -24,6 +26,7 @@ std::mutex m3;
 
 /*Condition variable 1: notify of changes in the windows map*/
 std::condition_variable cv1;
+
 
 /*********************Function prototypes*********************/
 /*Windows APIs to obtain the list of running windows*/
@@ -66,10 +69,39 @@ void poll_windows() {
 	windows fomr the OS, updating the map of windows and
 	notifying thread t2 of any changes through cv1*/
 	bool ret;
+	auto beginning = std::chrono::system_clock::now();
+	auto last = beginning;
+
 	while (true) {
+		std::set<Thread> to_remove;
 		Sleep(50);
 		std::unique_lock<std::mutex> l(m1);
+		auto now = std::chrono::system_clock::now();
 		EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&ret));
+		for (auto pair = threads.begin(); pair != threads.end(); pair++) {
+			Thread t = pair->second;
+
+			auto it = new_threads.find(t); //TODO: Implement euqlity operator between two threads
+			if (it != new_threads.end()) {
+				Thread new_thread = *it; //TODO: Unfuck up pointers and write copy constructor
+				new_thread.active_time = t.active_time + (now - last).count;
+				new_thread.active_percentage = t.active_time / (beginning - now).count;
+				threads[it->tid] = new_thread;
+				new_threads.erase(it);
+			}
+			else {
+				to_remove.insert(pair->second);
+			}
+		}
+		// Now we have in to_remove all the deleted threads
+		for (Thread t : to_remove) {
+			threads.erase(threads.find(t.tid));
+		}
+		for (Thread t : new_threads) {
+			threads[t.tid] = t;
+		}
+		last = now;
+		cv1.notify_all();
 	}
 }
 
@@ -94,6 +126,8 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 	threadId = GetWindowThreadProcessId(hWnd, NULL);
 	GetClassName(hWnd, className, 20);
 
+
+	/* Thanks Stack Overflow */
 	hIcon = (HICON)(::SendMessageW(hWnd, WM_GETICON, ICON_SMALL, 0));
 	if (hIcon == 0) {
 		// Alternative method. Get from the window class
@@ -107,19 +141,25 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 	if (hIcon == 0) {
 		hIcon = ::LoadIcon(0, IDI_APPLICATION);
 	}
+	/*END Thanks Stack Overflow */
 
-	Thread p(hWnd, buffer, threadId, hIcon);
-
-	if(threads.)
-	p.notification = 1;
-
+	Thread t(hWnd, buffer, threadId, hIcon);
+	new_threads.insert(t);
 	if (GetForegroundWindow() == hWnd) {
-		p.setFocusFlag();
+		t.set_focus_flag();
 	}
-	reinterpret_cast<std::vector<Thread>*>(lParam)->push_back(p);
 	delete[] className;
 	delete[] buffer;
 	return TRUE;
+}
+
+void notify_clents() {
+	/*Iterate through the clients sockets and notify of changes in the list*/
+	while (true) {
+		std::unique_lock<std::mutex> l(m1, std::adopt_lock);
+		cv1.wait(l);
+		//TODO: send list to all the clients
+	}
 }
 
 void err_fatal(char *mes) {
