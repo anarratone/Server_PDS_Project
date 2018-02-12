@@ -8,13 +8,25 @@ namespace std {
 #endif
 }
 
+namespace std
+{
+	template<>
+	struct hash<Thread>
+	{
+		size_t operator()(Thread const& s) const
+		{
+			return std::hash<std::wstring>()(s.name);
+		}
+	};
+}
+
 /*********************Global variables declaration*********************/
 /*Store a unique identifier for the window*/
 int WINDOWS_ID = 0;
 
 /*Data structure containing all the running windows*/
-std::map<int, Thread> threads;
-std::set<Thread> new_threads;
+std::map<std::wstring, Thread> threads;
+std::unordered_set<Thread> new_threads;
 std::vector<SOCKET> clients;
 
 /*Mutex 1: control access to the threads map*/
@@ -23,9 +35,16 @@ std::mutex m1;
 std::mutex m2;
 /*Mutex 3: control access to the actions list*/
 std::mutex m3;
+/*Mutex m4: control access to the thread_list_changed variable*/
+std::mutex m4;
 
 /*Condition variable 1: notify of changes in the windows map*/
 std::condition_variable cv1;
+bool thread_list_changed = false;
+
+/*Condition variable 2: set while t2 is notifying the clients*/
+std::condition_variable cv2;
+bool notifying_clients = false;
 
 
 /*********************Function prototypes*********************/
@@ -55,9 +74,9 @@ int main()
 	/*Thread 2: broadcast to clients the changes in the list*/
 	std::thread t2(notify_clients);
 	/*Thread 3: listen to clients sockets for incoming actions*/
-	std::thread t3(poll_actions);
+	//std::thread t3(poll_actions);
 	/*Thread 4: send the input to the specified window*/
-	std::thread t4(execute_actions);
+	//std::thread t4(execute_actions);
 
 
 system("pause");
@@ -73,35 +92,58 @@ void poll_windows() {
 	auto last = beginning;
 
 	while (true) {
-		std::set<Thread> to_remove;
+		std::unordered_set<Thread> to_remove;
+		bool changes = false;
 		Sleep(50);
+		system("cls");
 		std::unique_lock<std::mutex> l(m1);
+		cv2.wait(l, []() { return !thread_list_changed; });
 		auto now = std::chrono::system_clock::now();
 		EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&ret));
 		for (auto pair = threads.begin(); pair != threads.end(); pair++) {
 			Thread t = pair->second;
 
-			auto it = new_threads.find(t); //TODO: Implement euqlity operator between two threads
+			auto it = new_threads.find(t);
 			if (it != new_threads.end()) {
-				Thread new_thread = *it; //TODO: Unfuck up pointers and write copy constructor
-				new_thread.active_time = t.active_time + (now - last).count;
-				new_thread.active_percentage = t.active_time / (beginning - now).count;
-				threads[it->tid] = new_thread;
+				Thread new_thread = *it;
+				//std::cout << now.time_since_epoch().count() - last.time_since_epoch().count() << std::endl;
+				if (new_thread.focus) {
+					new_thread.active_time = t.active_time + now.time_since_epoch().count(
+					) - last.time_since_epoch().count();
+				}
+				else {
+					new_thread.active_time = t.active_time;
+				}
+				new_thread.active_percentage = new_thread.active_time / (
+					now.time_since_epoch().count() - beginning.time_since_epoch().count());
+				threads[new_thread.get_key()] = new_thread;
 				new_threads.erase(it);
 			}
 			else {
 				to_remove.insert(pair->second);
+				changes = true;
 			}
 		}
 		// Now we have in to_remove all the deleted threads
 		for (Thread t : to_remove) {
-			threads.erase(threads.find(t.tid));
+			threads.erase(threads.find(t.get_key()));
 		}
 		for (Thread t : new_threads) {
-			threads[t.tid] = t;
+			threads[t.get_key()] = t;
+			changes = true;
 		}
+		new_threads.clear();
 		last = now;
-		cv1.notify_all();
+		if (changes) {
+			std::cout << threads.size();
+			thread_list_changed = true;
+			cv1.notify_all();
+		}
+		for (auto pair = threads.begin(); pair != threads.end(); pair++) {
+			Thread t = pair->second; 
+			std::wcout << t.name << L" ==> " << t.active_percentage << std::endl;
+		}
+		//std::cout << "NOW: " << now.time_since_epoch().count() << std::endl;
 	}
 }
 
@@ -144,21 +186,22 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 	/*END Thanks Stack Overflow */
 
 	Thread t(hWnd, buffer, threadId, hIcon);
-	new_threads.insert(t);
 	if (GetForegroundWindow() == hWnd) {
-		t.set_focus_flag();
+		t.focus = true;
 	}
+	new_threads.insert(t);
 	delete[] className;
 	delete[] buffer;
 	return TRUE;
 }
 
-void notify_clents() {
+void notify_clients() {
 	/*Iterate through the clients sockets and notify of changes in the list*/
 	while (true) {
-		std::unique_lock<std::mutex> l(m1, std::adopt_lock);
-		cv1.wait(l);
-		//TODO: send list to all the clients
+		std::unique_lock<std::mutex> l(m1);
+		cv1.wait(l, []() { return thread_list_changed; });
+		thread_list_changed = false;
+		std::cout << "DIO" << std::endl;
 	}
 }
 

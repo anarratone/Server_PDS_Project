@@ -3,6 +3,44 @@
 //#include "saveicon.h"
 //#include "base64.h"
 
+bool Thread::operator==(const Thread &other) const
+{
+	return this->tid == other.tid && this->name == other.name && this->hWnd == other.hWnd;
+}
+
+Thread::Thread(const Thread & t)
+{
+	this->hWnd = t.hWnd;
+	this->name = t.name;
+	this->tid = t.tid;
+	this->hIcon = t.hIcon;
+	this->active_time = t.active_time;
+	this->active_percentage = t.active_percentage;
+	this->focus = t.focus;
+	this->notification = t.notification;
+}
+
+Thread & Thread::operator=(const Thread & t)
+{
+	if (this != &t) {
+		this->hWnd = t.hWnd;
+		this->name = t.name;
+		this->tid = t.tid;
+		this->hIcon = t.hIcon;
+		this->active_time = t.active_time;
+		this->active_percentage = t.active_percentage;
+		this->focus = t.focus;
+		this->notification = t.notification;
+	}
+	return *this;
+}
+
+std::wstring Thread::get_key()
+{
+	std::wstring name = this->name;
+	return std::wstring(name.append(std::wstring(std::to_wstring(this->tid))));
+}
+
 std::string Thread::serialize(size_t *size)
 {
 	JSONObject json;
@@ -30,9 +68,6 @@ std::string Thread::serialize(size_t *size)
 	return s;
 }
 
-void Thread::set_focus_flag() {
-	this->focus = true;
-}
 
 HWND Thread::get_handle() {
 	return this->hWnd;
