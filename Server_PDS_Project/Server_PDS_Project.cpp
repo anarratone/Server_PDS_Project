@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#define MAX_CLIENTS 10
+
 namespace std {
 #if defined _UNICODE || defined UNICODE
 	typedef wstring tstring;
@@ -21,13 +23,12 @@ namespace std
 }
 
 /*********************Global variables declaration*********************/
-/*Store a unique identifier for the window*/
-int WINDOWS_ID = 0;
 
 /*Data structure containing all the running windows*/
 std::map<std::wstring, Thread> threads;
 std::unordered_set<Thread> new_threads;
-std::vector<SOCKET> clients;
+
+std::unordered_set<SOCKET> clients;
 
 /*Mutex 1: control access to the threads map*/
 std::mutex m1;
@@ -44,8 +45,6 @@ bool thread_list_changed = false;
 
 /*Condition variable 2: set while t2 is notifying the clients*/
 std::condition_variable cv2;
-bool notifying_clients = false;
-
 
 /*********************Function prototypes*********************/
 /*Windows APIs to obtain the list of running windows*/
@@ -74,13 +73,55 @@ int main()
 	/*Thread 2: broadcast to clients the changes in the list*/
 	std::thread t2(notify_clients);
 	/*Thread 3: listen to clients sockets for incoming actions*/
-	//std::thread t3(poll_actions);
+	std::thread t3(poll_actions);
 	/*Thread 4: send the input to the specified window*/
 	//std::thread t4(execute_actions);
 
+	// Connection related variables
+	SOCKET client, s;
+	struct sockaddr_in sa_server;
+	struct sockaddr_in sa_client;
+	int client_len;
+	WSADATA wsadata;
 
-system("pause");
-return 0;
+	memset(&sa_server, 0, sizeof(struct sockaddr_in));
+	memset(&sa_client, 0, sizeof(struct sockaddr_in));
+	sa_server.sin_family = AF_INET;
+	sa_server.sin_addr.s_addr = INADDR_ANY;
+	sa_server.sin_port = htons(4444);
+
+	if (WSAStartup(MAKEWORD(2, 2), &wsadata) != 0) {
+		std::cerr << "WSAStartup FAILED" << std::endl;
+		exit(-1);
+	}
+
+	if ((s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
+		std::cout << "ERROR OPENING A SOCKET" << std::endl;
+		exit(-1);
+	}
+
+	if (bind(s, reinterpret_cast<struct sockaddr *>(&sa_server), sizeof(struct sockaddr_in)) != 0) {
+		err_fatal("BIND FAILED");
+	}
+
+	if (listen(s, MAX_CLIENTS) != 0) {
+		err_fatal("LISTEN FAILED");
+	}
+
+	while (true) {
+		client_len = sizeof(struct sockaddr_in);
+		if ((client = accept(s, reinterpret_cast<struct sockaddr *>(&sa_client), &client_len)) > 0) {
+			std::unique_lock<std::mutex> ul(m2);
+			clients.insert(client);
+			std::cout << "NEW CONNECTION FROM IP " << inet_ntoa(sa_client.sin_addr) << std::endl;
+			thread_list_changed = true;
+			cv1.notify_all();
+		}
+	}
+	closesocket(s);
+	WSACleanup();
+	system("pause");
+	return 0;
 }
 
 void poll_windows() {
@@ -90,12 +131,14 @@ void poll_windows() {
 	bool ret;
 	auto beginning = std::chrono::system_clock::now();
 	auto last = beginning;
+	auto last_notify = beginning;
+	int iteration = 0;
 
 	while (true) {
 		std::unordered_set<Thread> to_remove;
 		bool changes = false;
 		Sleep(50);
-		system("cls");
+		//system("cls");
 		std::unique_lock<std::mutex> l(m1);
 		cv2.wait(l, []() { return !thread_list_changed; });
 		auto now = std::chrono::system_clock::now();
@@ -106,7 +149,6 @@ void poll_windows() {
 			auto it = new_threads.find(t);
 			if (it != new_threads.end()) {
 				Thread new_thread = *it;
-				//std::cout << now.time_since_epoch().count() - last.time_since_epoch().count() << std::endl;
 				if (new_thread.focus) {
 					new_thread.active_time = t.active_time + now.time_since_epoch().count(
 					) - last.time_since_epoch().count();
@@ -133,17 +175,20 @@ void poll_windows() {
 			changes = true;
 		}
 		new_threads.clear();
+		// We want to flush anyway if 1 sec is passed
+		if ((now.time_since_epoch().count() - last_notify.time_since_epoch().count()) > 10000000) {
+			changes = true;
+		}
 		last = now;
 		if (changes) {
-			std::cout << threads.size();
 			thread_list_changed = true;
 			cv1.notify_all();
+			last_notify = now;
 		}
 		for (auto pair = threads.begin(); pair != threads.end(); pair++) {
 			Thread t = pair->second; 
-			std::wcout << t.name << L" ==> " << t.active_percentage << std::endl;
+			//std::wcout << t.name << L" ==> " << t.active_percentage << std::endl;
 		}
-		//std::cout << "NOW: " << now.time_since_epoch().count() << std::endl;
 	}
 }
 
@@ -198,16 +243,69 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 void notify_clients() {
 	/*Iterate through the clients sockets and notify of changes in the list*/
 	while (true) {
-		std::unique_lock<std::mutex> l(m1);
-		cv1.wait(l, []() { return thread_list_changed; });
+		std::unordered_set<SOCKET> to_remove;
+		std::unique_lock<std::mutex> l1(m1);
+		cv1.wait(l1, []() { return thread_list_changed; });
+		std::unique_lock<std::mutex> l2(m2);
+		for (SOCKET s : clients) {
+			for (auto pair : threads) {
+				Thread t = pair.second;
+				size_t string_size;
+				std::string serialized_thread = t.serialize(&string_size);
+				if (send(s, serialized_thread.c_str(), string_size, 0) == -1) {
+					std::cout << "CLIENT DISCONNECTED" << std::endl;
+					to_remove.insert(s);
+					break;
+				}
+			}
+		}
+		for (SOCKET s : to_remove) {
+			clients.erase(clients.find(s));
+		}
 		thread_list_changed = false;
-		std::cout << "DIO" << std::endl;
+	}
+}
+
+void poll_actions() {
+	fd_set read_set;
+	struct timeval tv;
+
+	tv.tv_sec = 0;
+	tv.tv_usec = 0;
+
+	while (true) {
+		Sleep(50);
+		std::unique_lock<std::mutex> l2(m2);
+		int max = 0;
+		FD_ZERO(&read_set);
+		for (SOCKET s : clients) {
+			FD_SET(s, &read_set);
+			if (s > max) max = s;
+		}
+		if (select(max + 1, &read_set, NULL, NULL, &tv) > 0) {
+			for (SOCKET s : clients) {
+				if (FD_ISSET(s, &read_set)) {
+					char buffer[256];
+					char *c = buffer;
+					std::cout << "RECEIVING" << std::endl;
+					while (recv(s, c++, 1, 0) == 1) {
+						if (*(c - 1) == '\n') {
+							*(c - 1) = '\0';
+							std::cout << "Received newline... Exiting" << std::endl;
+							break;
+						}
+					}
+					std::cout << buffer << std::endl;
+
+				}
+			}
+		}
 	}
 }
 
 void err_fatal(char *mes) {
-	printf("%s, errno=%d\n", mes, WSAGetLastError());
+	std::cout << mes << " ERROR NUMBER = " << WSAGetLastError() << std::endl;
 	perror("");
 	getchar();
-	exit(1);
+	exit(-1);
 }
