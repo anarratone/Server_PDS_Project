@@ -147,6 +147,7 @@
   <ItemGroup>
     <ClInclude Include="..\SimpleJSON\src\JSON.h" />
     <ClInclude Include="..\SimpleJSON\src\JSONValue.h" />
+    <ClInclude Include="Action.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="Thread.h" />
@@ -154,6 +155,7 @@
   <ItemGroup>
     <ClCompile Include="..\SimpleJSON\src\JSON.cpp" />
     <ClCompile Include="..\SimpleJSON\src\JSONValue.cpp" />
+    <ClCompile Include="Action.cpp" />
     <ClCompile Include="Server_PDS_Project.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

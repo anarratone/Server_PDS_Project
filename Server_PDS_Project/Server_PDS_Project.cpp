@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#include "Thread.h"
+
+
 
 #define MAX_CLIENTS 10
 
@@ -275,8 +278,10 @@ void poll_actions() {
 
 	while (true) {
 		Sleep(50);
+		std::unordered_set<SOCKET> to_remove;
 		std::unique_lock<std::mutex> l2(m2);
-		int max = 0;
+		SOCKET max = 0;
+
 		FD_ZERO(&read_set);
 		for (SOCKET s : clients) {
 			FD_SET(s, &read_set);
@@ -285,20 +290,40 @@ void poll_actions() {
 		if (select(max + 1, &read_set, NULL, NULL, &tv) > 0) {
 			for (SOCKET s : clients) {
 				if (FD_ISSET(s, &read_set)) {
-					char buffer[256];
+					char buffer[256] = {0};
 					char *c = buffer;
-					std::cout << "RECEIVING" << std::endl;
-					while (recv(s, c++, 1, 0) == 1) {
-						if (*(c - 1) == '\n') {
-							*(c - 1) = '\0';
-							std::cout << "Received newline... Exiting" << std::endl;
+					while (recv(s, c, 1, 0) == 1) {
+						if (*c == '\n') {
+							*c = '\0';
 							break;
 						}
+						c++;
 					}
-					std::cout << buffer << std::endl;
-
+					if (c == buffer) {
+						// No received bytes, socket is closed
+						to_remove.insert(s);
+					}
+					else {
+						JSONValue *value = JSON::Parse(buffer);
+						if (value == nullptr) continue;
+						JSONObject root = value->AsObject();
+						std::cout << "NEW JSONValue" << std::endl;
+						if (root.find(L"hello") != root.end() && root[L"hello"]->IsArray()) {
+							std::cout << "FOUND HELLO" << std::endl;
+							JSONArray json_array = root[L"hello"]->AsArray();
+							for (auto array_value : json_array) {
+								if (array_value->IsNumber())
+									std::wcout << array_value->AsNumber() << " ";
+							}
+							
+						}
+					}
 				}
 			}
+		}
+		for (SOCKET s : to_remove) {
+			std::cout << "REMOVING CLIENT" << std::endl;
+			clients.erase(clients.find(s));
 		}
 	}
 }

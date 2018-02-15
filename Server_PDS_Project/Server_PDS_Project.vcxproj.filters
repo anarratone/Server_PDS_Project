@@ -33,6 +33,9 @@
     <ClInclude Include="stdafx.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="Action.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -48,6 +51,9 @@
       <Filter>File di origine</Filter>
     </ClCompile>
     <ClCompile Include="Thread.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="Action.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
   </ItemGroup>
