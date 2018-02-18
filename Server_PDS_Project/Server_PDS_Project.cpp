@@ -33,6 +33,7 @@ std::unordered_set<Thread> new_threads;
 
 std::unordered_set<SOCKET> clients;
 
+std::list<Action> actions;
 /*Mutex 1: control access to the threads map*/
 std::mutex m1;
 /*Mutex 2: control access to the clients list*/
@@ -48,6 +49,9 @@ bool thread_list_changed = false;
 
 /*Condition variable 2: set while t2 is notifying the clients*/
 std::condition_variable cv2;
+
+/*Condition variable 3: notify of incoming actions*/
+std::condition_variable cv3;
 
 /*********************Function prototypes*********************/
 /*Windows APIs to obtain the list of running windows*/
@@ -78,7 +82,7 @@ int main()
 	/*Thread 3: listen to clients sockets for incoming actions*/
 	std::thread t3(poll_actions);
 	/*Thread 4: send the input to the specified window*/
-	//std::thread t4(execute_actions);
+	std::thread t4(execute_actions);
 
 	// Connection related variables
 	SOCKET client, s;
@@ -179,7 +183,8 @@ void poll_windows() {
 		}
 		new_threads.clear();
 		// We want to flush anyway if 1 sec is passed
-		if ((now.time_since_epoch().count() - last_notify.time_since_epoch().count()) > 10000000) {
+		if ((now.time_since_epoch().count() - last_notify.time_since_epoch().count()) 
+			> 10000000) {
 			changes = true;
 		}
 		last = now;
@@ -305,17 +310,24 @@ void poll_actions() {
 					}
 					else {
 						JSONValue *value = JSON::Parse(buffer);
-						if (value == nullptr) continue;
+
+						if (value == nullptr)
+							continue;
+
 						JSONObject root = value->AsObject();
-						std::cout << "NEW JSONValue" << std::endl;
-						if (root.find(L"hello") != root.end() && root[L"hello"]->IsArray()) {
-							std::cout << "FOUND HELLO" << std::endl;
-							JSONArray json_array = root[L"hello"]->AsArray();
-							for (auto array_value : json_array) {
-								if (array_value->IsNumber())
-									std::wcout << array_value->AsNumber() << " ";
+
+						if (root.find(L"key") != root.end() && root[L"key"]->IsString()) {
+							Action action(root[L"key"]->AsString());
+							if (root.find(L"inputs") != root.end() && root[L"inputs"]->IsArray()) {
+								JSONArray inputs = root[L"inputs"]->AsArray();
+								for (auto input : inputs) {
+									if (input->IsNumber())
+										action.add_input(input->AsNumber());
+								}
 							}
-							
+							std::unique_lock<std::mutex> l(m3);
+							actions.push_front(action);
+							cv3.notify_all();
 						}
 					}
 				}
@@ -324,6 +336,23 @@ void poll_actions() {
 		for (SOCKET s : to_remove) {
 			std::cout << "REMOVING CLIENT" << std::endl;
 			clients.erase(clients.find(s));
+		}
+	}
+}
+
+void execute_actions() {
+	while (true) {
+		std::unique_lock<std::mutex> l(m3);
+		cv3.wait(l, []() {return !actions.empty(); });
+		while (!actions.empty()) {
+			Action action = actions.back();
+			actions.pop_back();
+
+			if (threads.find(action.key) != threads.end() && threads[action.key].focus) {
+				INPUT *inputs = action.get_inputs();
+				SendInput(action.inputs.size() * 2, inputs, sizeof(INPUT));
+				delete inputs;
+			}
 		}
 	}
 }

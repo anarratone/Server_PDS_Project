@@ -5,7 +5,7 @@
 
 bool Thread::operator==(const Thread &other) const
 {
-	return this->tid == other.tid && this->name == other.name && this->hWnd == other.hWnd;
+	return this->tid == other.tid && this->name == other.name; //&& this->hWnd == other.hWnd;
 }
 
 Thread::Thread(const Thread & t)

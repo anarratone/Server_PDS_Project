@@ -15,7 +15,9 @@
 #include <Winsock2.h>
 #include <Windows.h>
 #include "Thread.h"
+#include "Action.h"
 #include <vector>
+#include <list>
 #include <string.h>
 #include <chrono>
 #include <thread>
