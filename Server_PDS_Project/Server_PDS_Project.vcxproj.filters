@@ -36,6 +36,12 @@
     <ClInclude Include="Action.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="Base64.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="SaveIcon.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -54,6 +60,12 @@
       <Filter>File di origine</Filter>
     </ClCompile>
     <ClCompile Include="Action.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="Base64.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="SaveIcon.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
   </ItemGroup>
