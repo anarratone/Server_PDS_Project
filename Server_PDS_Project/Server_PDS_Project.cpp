@@ -72,61 +72,58 @@ void poll_actions();
 /*Callable for Thread4*/
 void execute_actions();
 
+/*Callable for Thread5*/
+void get_clients();
+
 int main()
 {
 	/*********************Main variables*********************/
 	/*Thread 1: poll the OS to get the windows*/
-	std::thread t1(poll_windows);
+	std::packaged_task<void()> task1(poll_windows);
+	auto future1 = task1.get_future();
+	std::thread t1(std::move(task1));
 	/*Thread 2: broadcast to clients the changes in the list*/
-	std::thread t2(notify_clients);
+	std::packaged_task<void()> task2(notify_clients);
+	auto future2 = task2.get_future();
+	std::thread t2(std::move(task2));
 	/*Thread 3: listen to clients sockets for incoming actions*/
-	std::thread t3(poll_actions);
+	std::packaged_task<void()> task3(poll_actions);
+	auto future3 = task3.get_future();
+	std::thread t3(std::move(task3));
 	/*Thread 4: send the input to the specified window*/
-	std::thread t4(execute_actions);
+	std::packaged_task<void()> task4(execute_actions);
+	auto future4 = task4.get_future();
+	std::thread t4(std::move(task4));
+	/*Thread 5: get new connections*/
+	std::packaged_task<void()> task5(get_clients);
+	auto future5 = task5.get_future();
+	std::thread t5(std::move(task5));
 
-	// Connection related variables
-	SOCKET client, s;
-	struct sockaddr_in sa_server;
-	struct sockaddr_in sa_client;
-	int client_len;
-	WSADATA wsadata;
-
-	memset(&sa_server, 0, sizeof(struct sockaddr_in));
-	memset(&sa_client, 0, sizeof(struct sockaddr_in));
-	sa_server.sin_family = AF_INET;
-	sa_server.sin_addr.s_addr = INADDR_ANY;
-	sa_server.sin_port = htons(4444);
-
-	if (WSAStartup(MAKEWORD(2, 2), &wsadata) != 0) {
-		std::cerr << "WSAStartup FAILED" << std::endl;
-		exit(-1);
-	}
-
-	if ((s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
-		std::cout << "ERROR OPENING A SOCKET" << std::endl;
-		exit(-1);
-	}
-
-	if (bind(s, reinterpret_cast<struct sockaddr *>(&sa_server), sizeof(struct sockaddr_in)) != 0) {
-		err_fatal("BIND FAILED");
-	}
-
-	if (listen(s, MAX_CLIENTS) != 0) {
-		err_fatal("LISTEN FAILED");
-	}
-
+	// Debug watchdog
 	while (true) {
-		client_len = sizeof(struct sockaddr_in);
-		if ((client = accept(s, reinterpret_cast<struct sockaddr *>(&sa_client), &client_len)) > 0) {
-			std::unique_lock<std::mutex> ul(m2);
-			clients.insert(client);
-			std::cout << "NEW CONNECTION FROM IP " << inet_ntoa(sa_client.sin_addr) << std::endl;
-			thread_list_changed = true;
-			cv1.notify_all();
+		using namespace std::chrono_literals;
+		auto status1 = future1.wait_for(10ms);
+		if (status1 == std::future_status::ready) {
+			std::cout << "Thread 1 died." << std::endl;
+		}
+		auto status2 = future2.wait_for(10ms);
+		if (status2 == std::future_status::ready) {
+			std::cout << "Thread 2 died." << std::endl;
+		}
+		auto status3 = future3.wait_for(10ms);
+		if (status3 == std::future_status::ready) {
+			std::cout << "Thread 3 died." << std::endl;
+		}
+		auto status4 = future4.wait_for(10ms);
+		if (status4 == std::future_status::ready) {
+			std::cout << "Thread 4 died." << std::endl;
+		}
+		auto status5 = future5.wait_for(10ms);
+		if (status5 == std::future_status::ready) {
+			std::cout << "Thread 5 died." << std::endl;
 		}
 	}
-	closesocket(s);
-	WSACleanup();
+	
 	system("pause");
 	return 0;
 }
@@ -145,7 +142,6 @@ void poll_windows() {
 		std::unordered_set<Thread> to_remove;
 		bool changes = false;
 		Sleep(50);
-		//system("cls");
 		std::unique_lock<std::mutex> l(m1);
 		cv2.wait(l, []() { return !thread_list_changed; });
 		auto now = std::chrono::system_clock::now();
@@ -266,6 +262,10 @@ void notify_clients() {
 					break;
 				}
 			}
+			if (send(s, "NEW LIST\r\n", 10, 0) == -1) {
+				to_remove.insert(s);
+				continue;
+			}
 		}
 		for (SOCKET s : to_remove) {
 			clients.erase(clients.find(s));
@@ -309,25 +309,30 @@ void poll_actions() {
 						to_remove.insert(s);
 					}
 					else {
-						JSONValue *value = JSON::Parse(buffer);
+						try {
+							JSONValue *value = JSON::Parse(buffer);
 
-						if (value == nullptr)
-							continue;
+							if (value == nullptr)
+								continue;
 
-						JSONObject root = value->AsObject();
+							JSONObject root = value->AsObject();
 
-						if (root.find(L"key") != root.end() && root[L"key"]->IsString()) {
-							Action action(root[L"key"]->AsString());
-							if (root.find(L"inputs") != root.end() && root[L"inputs"]->IsArray()) {
-								JSONArray inputs = root[L"inputs"]->AsArray();
-								for (auto input : inputs) {
-									if (input->IsNumber())
-										action.add_input(input->AsNumber());
+							if (root.find(L"key") != root.end() && root[L"key"]->IsString()) {
+								Action action(root[L"key"]->AsString());
+								if (root.find(L"inputs") != root.end() && root[L"inputs"]->IsArray()) {
+									JSONArray inputs = root[L"inputs"]->AsArray();
+									for (auto input : inputs) {
+										if (input->IsNumber())
+											action.add_input(input->AsNumber());
+									}
 								}
+								std::unique_lock<std::mutex> l(m3);
+								actions.push_front(action);
+								cv3.notify_all();
 							}
-							std::unique_lock<std::mutex> l(m3);
-							actions.push_front(action);
-							cv3.notify_all();
+						}
+						catch (...) {
+							std::cout << "Ouch, something went wrong" << std::endl;
 						}
 					}
 				}
@@ -347,14 +352,64 @@ void execute_actions() {
 		while (!actions.empty()) {
 			Action action = actions.back();
 			actions.pop_back();
-
+			
 			if (threads.find(action.key) != threads.end() && threads[action.key].focus) {
+				std::cout << "EXECUTING ACTION ";
+				action.print();
 				INPUT *inputs = action.get_inputs();
-				SendInput(action.inputs.size() * 2, inputs, sizeof(INPUT));
+			    SendInput(action.inputs.size() * 2, inputs, sizeof(INPUT));
 				delete inputs;
+
 			}
 		}
 	}
+}
+
+void get_clients()
+{
+	// Connection related variables
+	SOCKET client, s;
+	struct sockaddr_in sa_server;
+	struct sockaddr_in sa_client;
+	int client_len;
+	WSADATA wsadata;
+
+	memset(&sa_server, 0, sizeof(struct sockaddr_in));
+	memset(&sa_client, 0, sizeof(struct sockaddr_in));
+	sa_server.sin_family = AF_INET;
+	sa_server.sin_addr.s_addr = INADDR_ANY;
+	sa_server.sin_port = htons(4444);
+
+	if (WSAStartup(MAKEWORD(2, 2), &wsadata) != 0) {
+		std::cerr << "WSAStartup FAILED" << std::endl;
+		exit(-1);
+	}
+
+	if ((s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
+		std::cout << "ERROR OPENING A SOCKET" << std::endl;
+		exit(-1);
+	}
+
+	if (bind(s, reinterpret_cast<struct sockaddr *>(&sa_server), sizeof(struct sockaddr_in)) != 0) {
+		err_fatal("BIND FAILED");
+	}
+
+	if (listen(s, MAX_CLIENTS) != 0) {
+		err_fatal("LISTEN FAILED");
+	}
+
+	while (true) {
+		client_len = sizeof(struct sockaddr_in);
+		if ((client = accept(s, reinterpret_cast<struct sockaddr *>(&sa_client), &client_len)) > 0) {
+			std::unique_lock<std::mutex> ul(m2);
+			clients.insert(client);
+			std::cout << "NEW CONNECTION FROM IP " << inet_ntoa(sa_client.sin_addr) << std::endl;
+			thread_list_changed = true;
+			cv1.notify_all();
+		}
+	}
+	closesocket(s);
+	WSACleanup();
 }
 
 void err_fatal(char *mes) {

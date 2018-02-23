@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <tchar.h>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <string>
 #include <Winsock2.h>

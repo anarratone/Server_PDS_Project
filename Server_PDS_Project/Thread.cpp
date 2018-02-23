@@ -38,6 +38,7 @@ std::wstring Thread::get_key() {
 std::string Thread::serialize(size_t *size) {
 	JSONObject json;
 
+	json[L"percentage"] = new JSONValue((float) this->active_percentage * 100);
 	json[L"title"] = new JSONValue(this->name);
 	json[L"pid"] = new JSONValue((int) this->tid);
 	json[L"isFocused"] = new JSONValue(this->focus);
@@ -51,7 +52,7 @@ std::string Thread::serialize(size_t *size) {
     std::vector<char> bytes(icon_size);
 	file.read(bytes.data(), icon_size);
 
-	json[L"iconsize"] = new JSONValue((int) icon_size);
+	json[L"iconSize"] = new JSONValue((int) icon_size);
 	std::string icon_encoded = base64_encode(bytes.data(), icon_size);
 	std::wstring wicon_encoded(icon_encoded.length(), L' ');
 	std::copy(icon_encoded.begin(), icon_encoded.end(), wicon_encoded.begin());
@@ -61,12 +62,7 @@ std::string Thread::serialize(size_t *size) {
 	std::string s(str.begin(), str.end());
 	s.append("\r\n");
 	*size = s.length();
-	/*delete json[L"title"];
-	delete json[L"pid"];
-	delete json[L"isFocused"];
-	delete json[L"notification"];
-	delete json[L"iconsize"];
-	delete json[L"icon"];*/
+
 	delete value;
 	return s;
 }
