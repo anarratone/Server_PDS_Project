@@ -251,17 +251,20 @@ void notify_clients() {
 		std::unique_lock<std::mutex> l1(m1);
 		cv1.wait(l1, []() { return thread_list_changed; });
 		std::unique_lock<std::mutex> l2(m2);
-		for (SOCKET s : clients) {
-			for (auto pair : threads) {
-				Thread t = pair.second;
-				size_t string_size;
-				std::string serialized_thread = t.serialize(&string_size);
+		for (auto pair : threads) {
+			Thread t = pair.second;
+			size_t string_size;
+			std::string serialized_thread = t.serialize(&string_size);
+			for (SOCKET s : clients) {
 				if (send(s, serialized_thread.c_str(), string_size, 0) == -1) {
 					std::cout << "CLIENT DISCONNECTED" << std::endl;
 					to_remove.insert(s);
 					break;
 				}
 			}
+		}
+
+		for (SOCKET s : clients) {
 			if (send(s, "NEW LIST\r\n", 10, 0) == -1) {
 				to_remove.insert(s);
 				continue;
@@ -352,15 +355,16 @@ void execute_actions() {
 		while (!actions.empty()) {
 			Action action = actions.back();
 			actions.pop_back();
-			
+
 			if (threads.find(action.key) != threads.end() && threads[action.key].focus) {
 				std::cout << "EXECUTING ACTION ";
 				action.print();
 				INPUT *inputs = action.get_inputs();
-			    SendInput(action.inputs.size() * 2, inputs, sizeof(INPUT));
+				SendInput(action.inputs.size() * 2, inputs, sizeof(INPUT));
 				delete inputs;
-
 			}
+			else
+				std::cout << "IGNORING: WINDOW NOT IN FOCUS" << std::endl;
 		}
 	}
 }

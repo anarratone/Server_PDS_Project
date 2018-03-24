@@ -27,8 +27,8 @@
 #include <unordered_set>
 #include <functional>
 #include <condition_variable>
-#include "../SimpleJSON/src/JSON.h"
-#include "../SimpleJSON/src/JSONValue.h"
+#include "..\SimpleJSON\src\JSON.h"
+#include "..\SimpleJSON\src\JSONValue.h"
 
 
 
