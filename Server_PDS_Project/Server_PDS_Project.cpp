@@ -40,8 +40,6 @@ std::mutex m1;
 std::mutex m2;
 /*Mutex 3: control access to the actions list*/
 std::mutex m3;
-/*Mutex m4: control access to the thread_list_changed variable*/
-std::mutex m4;
 
 /*Condition variable 1: notify of changes in the windows map*/
 std::condition_variable cv1;
@@ -191,7 +189,6 @@ void poll_windows() {
 		}
 		for (auto pair = threads.begin(); pair != threads.end(); pair++) {
 			Thread t = pair->second; 
-			//std::wcout << t.name << L" ==> " << t.active_percentage << std::endl;
 		}
 	}
 }
@@ -216,8 +213,7 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
 	GetWindowText(hWnd, buffer, length + 1);
 	threadId = GetWindowThreadProcessId(hWnd, NULL);
 	GetClassName(hWnd, className, 20);
-
-
+	
 	/* Thanks Stack Overflow */
 	hIcon = (HICON)(::SendMessageW(hWnd, WM_GETICON, ICON_SMALL, 0));
 	if (hIcon == 0) {
@@ -259,9 +255,12 @@ void notify_clients() {
 				if (send(s, serialized_thread.c_str(), string_size, 0) == -1) {
 					std::cout << "CLIENT DISCONNECTED" << std::endl;
 					to_remove.insert(s);
-					break;
 				}
 			}
+			for (SOCKET s : to_remove) {
+				clients.erase(clients.find(s));
+			}
+			to_remove.clear();
 		}
 
 		for (SOCKET s : clients) {
